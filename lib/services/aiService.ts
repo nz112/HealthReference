@@ -35,7 +35,8 @@ export interface Evidence {
   paperUrl: string;
   paperId: string;
   relevantSection?: string;
-  quote?: string;
+  quote?: string; // Extended quote with actual impacts/results
+  impact?: string; // Actual impacts/results from the study (e.g., "reduced blood pressure by 10mmHg", "improved cognitive function by 15%")
   doi?: string;
   sectionForExercises?: string; // Specific section where exercise details are mentioned
   sectionForDosage?: string; // Specific section where dosage/intake details are mentioned
@@ -47,15 +48,6 @@ export interface HealthAnalysis {
   condition: string;
   recommendations: HealthRecommendation[];
   mechanisms: string[]; // e.g., ["insulin resistance", "inflammation"]
-  budgetOptions?: BudgetOption[];
-}
-
-export interface BudgetOption {
-  name: string;
-  description: string;
-  source: string;
-  sourceUrl: string;
-  cost?: string;
 }
 
 
@@ -114,7 +106,18 @@ export async function analyzeHealthPapers(
     })),
   ];
 
+  console.log('Total papers received:', allPapers.length);
+  console.log('PubMed papers:', pubmedPapers.length);
+  console.log('Google Scholar papers:', googleScholarPapers.length);
+  console.log('Web contents:', webContents.length);
+  
+  // Log sample papers to see what we're sending
+  if (allPapers.length > 0) {
+    console.log('Sample paper titles:', allPapers.slice(0, 3).map(p => p.title));
+  }
+
   if (allPapers.length === 0) {
+    console.warn('No papers to analyze');
     return {
       condition,
       recommendations: [],
@@ -170,8 +173,17 @@ CRITICAL: Only extract recommendations that are DIRECTLY relevant to "${conditio
 2. SPECIFIC foods and activities that are RISKY for "${condition}" specifically
    ${hasCause ? `   - Include risks specific to "${condition}" as well as general risks for "${baseCondition}"` : ''}
    ${hasCause ? `   - Focus on risks related to "${cause}", not unrelated causes` : ''}
-3. The biological mechanisms involved that are RELEVANT to "${condition}" (e.g., for concussion: "neuroinflammation", "axonal injury", "cognitive function"; for diabetes: "insulin resistance", "glucose metabolism")
-4. For each recommendation, cite specific papers with relevant quotes or section references
+4. For each recommendation, cite specific papers with:
+   - EXTENDED QUOTES: Include longer, more detailed quotes from the paper (MINIMUM 4 sentences, aim for 5-10 lines or 5-8 sentences)
+     * Copy substantial paragraphs or multiple sentences that provide context
+     * Include enough text to show the full context of the finding
+     * MINIMUM requirement: at least 4 complete sentences from the paper
+     * Aim for 5-10 lines of text from the paper
+   - ACTUAL IMPACTS: Extract the actual results/impacts from the study (look in Discussion and Results sections)
+     * Examples: "reduced blood pressure by 10mmHg", "improved cognitive function by 15%", "decreased inflammation markers by 20%"
+     * Include specific numbers, percentages, and measurable outcomes when available
+     * Look especially in Discussion and Results sections for impact data
+   - Section references: Note which section the quote comes from (e.g., "Discussion section", "Results section")
 
 CRITICAL REQUIREMENTS FOR RECOMMENDATIONS:
 - Each recommendation must be SPECIFIC and ACTIONABLE (e.g., "Running", "Spinach", "Bench Press", NOT "Exercise", "Vegetables", "Lifting Weights")
@@ -187,12 +199,16 @@ EXTRACT SPECIFIC DETAILS - FOLLOW THIS EXACT WORKFLOW:
 
 STEP 1: FIND THE EXACT TEXT CHUNK IN THE PUBLICATION FIRST
 - For ACTIVITIES/EXERCISES:
-  * FIRST, search the paper for sections containing exercise details (typically in Methods, Intervention, or Results sections)
+  * CRITICAL: Exercise details (reps, sets, duration, frequency, specific exercises) are ALMOST ALWAYS in the Methods section
+  * FIRST, search the Methods section thoroughly - this is where intervention protocols are described
+  * Also check: Intervention section, Materials and Methods, Study Protocol, or Results section if methods are described there
   * Find the EXACT TEXT CHUNK from the paper that contains exercise information
   * Copy the relevant paragraph or sentence DIRECTLY from the paper - copy it EXACTLY as written
   * The chunk MUST contain the actual numbers, exercises, reps, sets, duration, frequency mentioned
-  * Note the exact location (e.g., "Methods section, page 3", "Table 2")
+  * Look for phrases like "participants performed", "exercise protocol", "training program", "intervention consisted of"
+  * Note the exact location (e.g., "Methods section, page 3", "Methods section, paragraph 2", "Table 2")
   * Store this EXACT text in "exerciseDetailsChunk" and location in "sectionForExercises" in the evidence object
+  * If you find exercise details in Methods, you MUST include them - do not skip this step
   
 - For FOODS/SUPPLEMENTS:
   * FIRST, search the paper for sections containing dosage/intake details (typically in Methods or Intervention sections)
@@ -206,11 +222,19 @@ STEP 2: EXTRACT STRUCTURED FIELDS FROM THE EXACT CHUNK
 - ONLY if you found a chunk in Step 1, then extract structured fields FROM THAT EXACT CHUNK:
   
   For ACTIVITIES/EXERCISES (extract ONLY from the exact chunk you found):
+  * CRITICAL: If the paper describes a stretching routine, exercise regimen, or training program, extract the EXACT routine/regimen details
+  * For stretching routines: Extract the specific stretches, order, duration per stretch, repetitions, frequency
+  * For exercise regimens: Extract the complete protocol - all exercises, sets, reps, duration, frequency, rest periods
   * Extract exercises, reps, sets, duration, frequency, intensity ONLY if they appear in the exact chunk text
   * The values you extract MUST match what's written in the chunk
   * Example: If chunk says "Participants performed bench press, 3 sets of 8-12 reps, 3 times per week"
-    - Extract: specificExercises: ["Bench Press"], reps: "3 sets of 8-12 reps", frequency: "3 times per week"
+    - Extract: specificExercises: ["Bench Press"], reps: "8-12 reps", sets: "3 sets", frequency: "3 times per week"
     - The chunk MUST contain these exact values - user should be able to Ctrl+F and find "3 sets of 8-12 reps" in the chunk
+  * Example: If chunk says "Pre-golf stretching routine: (1) wrist flexor stretch 30 seconds, (2) wrist extensor stretch 30 seconds, (3) forearm pronation stretch 30 seconds, repeated 3 times"
+    - Extract: specificExercises: ["Wrist Flexor Stretch", "Wrist Extensor Stretch", "Forearm Pronation Stretch"], duration: "30 seconds per stretch", reps: "3 repetitions", frequency: "before golf"
+  * Look for patterns like: "routine", "regimen", "protocol", "program", "X sets of Y reps", "X times per week", "X minutes", "X sessions", "X weeks"
+  * Extract ALL numbers related to exercise protocol (reps, sets, duration, frequency, intensity, weeks, sessions)
+  * Extract the COMPLETE routine/regimen - if it lists multiple exercises in order, include all of them in specificExercises
   * DO NOT make up or infer values that aren't explicitly in the chunk
   * DO NOT extract fields if the chunk says "not specified", "not reported", "not mentioned", or similar
   
@@ -225,12 +249,14 @@ STEP 2: EXTRACT STRUCTURED FIELDS FROM THE EXACT CHUNK
 
 CRITICAL RULES - VERIFICATION REQUIREMENT:
 - The chunk is the SOURCE - you must find it FIRST before extracting any fields
+- For exercise recommendations: ALWAYS check the Methods section first - exercise protocols are almost always there
 - Every value in the structured fields MUST appear in the chunk text
 - Users must be able to Ctrl+F (search) for each field value in the displayed chunk
 - If a value doesn't appear in the chunk, DO NOT include it in the fields
 - If you cannot find a chunk with exercise/dosage details in the paper, DO NOT include any exercise/dosage fields or chunks at all
 - DO NOT paraphrase, summarize, or modify the chunk text - copy it EXACTLY as written
 - DO NOT extract fields that aren't explicitly stated in the chunk
+- IMPORTANT: If a paper mentions exercise but you can't find specific numbers, still include the exerciseDetailsChunk with the descriptive text from Methods (e.g., "Participants engaged in resistance training 3 times per week" even if exact reps aren't specified)
 
 CRITICAL REQUIREMENTS FOR MECHANISM:
 - The "mechanism" field must explain HOW the food/activity specifically affects "${condition}"
@@ -245,7 +271,6 @@ CRITICAL REQUIREMENTS FOR MECHANISM:
 
 Format your response as JSON with this structure:
 {
-  "mechanisms": ["mechanism1", "mechanism2"],
   "recommendations": [
     {
       "type": "food" or "activity",
@@ -266,7 +291,9 @@ Format your response as JSON with this structure:
           "paperTitle": "title",
           "paperUrl": "url",
           "paperId": "id",
-          "quote": "relevant quote or section",
+          "quote": "EXTENDED quote (MINIMUM 4 sentences, aim for 5-8 sentences or 5-10 lines) from the paper, preferably from Discussion or Results section, showing the actual impacts/results. Include substantial context and multiple sentences. Must be at least 4 complete sentences.",
+          "impact": "Actual measurable impacts/results from the study (e.g., 'reduced blood pressure by 10mmHg', 'improved cognitive function by 15%', 'decreased inflammation by 20%') - extract from Discussion or Results sections",
+          "relevantSection": "section where quote comes from (e.g., 'Discussion section', 'Results section', 'Conclusion')",
           "doi": "doi if available",
           "sectionForExercises": "exact section/page where exercise details are mentioned (e.g., 'Methods section, page 3', 'Table 2', 'Results paragraph 2') - ONLY include if exercise details are in this paper",
           "exerciseDetailsChunk": "EXACT text chunk from the paper containing exercise details (copy the relevant paragraph or sentence directly from the paper) - ONLY include if exercise details are in this paper",
@@ -290,6 +317,11 @@ ${papersText}
 
 Respond ONLY with valid JSON, no markdown formatting.`;
 
+  console.log('Prompt length:', prompt.length);
+  console.log('Papers text length:', papersText.length);
+  console.log('Number of papers in prompt:', allPapers.length);
+  console.log('Papers text preview (first 500 chars):', papersText.substring(0, 500));
+
   try {
     const fullPrompt = `You are a medical research analyst. Extract health recommendations from scientific papers and format them as JSON. Always cite specific papers with quotes or section references.
 
@@ -299,9 +331,84 @@ ${prompt}`;
 
     const responseText = await generateAIResponse(fullPrompt, systemPrompt);
     
+    // Log the raw response for debugging
+    console.log('AI Response length:', responseText?.length || 0);
+    console.log('AI Response preview:', responseText?.substring(0, 500) || 'EMPTY');
+    
     // Clean up response (remove markdown code blocks if present)
     const cleanedText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const analysis = JSON.parse(cleanedText);
+    
+    let analysis;
+    try {
+      analysis = JSON.parse(cleanedText);
+      console.log('Parsed analysis - recommendations count:', analysis?.recommendations?.length || 0);
+      
+      // If we got empty results, try a simpler prompt (less restrictive)
+      if (!analysis.recommendations || analysis.recommendations.length === 0) {
+        console.warn('AI returned empty recommendations, trying simpler prompt...');
+        
+        const simplerPrompt = `You are a medical research analyst. Analyze the following scientific papers related to "${condition}" and extract health recommendations.
+
+Extract:
+1. SPECIFIC foods and activities that are BENEFICIAL for "${condition}"
+2. SPECIFIC foods and activities that are RISKY for "${condition}"
+
+For each recommendation, provide:
+- type: "food" or "activity"
+- name: SPECIFIC name (e.g., "Running", "Spinach", "Caffeine", NOT "Exercise" or "Diet")
+- category: "beneficial" or "risky"
+- mechanism: How it works (e.g., "increases insulin sensitivity" for diabetes)
+- summary: Brief explanation
+- evidence: Array with paperTitle, paperUrl, paperId, quote (from the paper), relevantSection
+
+Format as JSON:
+{
+  "recommendations": [
+    {
+      "type": "food" or "activity",
+      "name": "specific name",
+      "category": "beneficial" or "risky",
+      "mechanism": "how it works",
+      "summary": "brief explanation",
+      "evidence": [
+        {
+          "paperTitle": "title",
+          "paperUrl": "url",
+          "paperId": "id",
+          "quote": "Extended quote (MINIMUM 4 sentences, aim for 5-8 sentences) from the paper with substantial context",
+          "relevantSection": "section name"
+        }
+      ]
+    }
+  ]
+}
+
+Papers to analyze:
+${papersText.substring(0, 10000)}${papersText.length > 10000 ? '...' : ''}
+
+Respond ONLY with valid JSON.`;
+
+        const simplerSystemPrompt = 'You are a medical research analyst. Extract health recommendations from scientific papers.';
+        const simplerResponse = await generateAIResponse(simplerPrompt, simplerSystemPrompt);
+        const simplerCleaned = simplerResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        
+        try {
+          const simplerAnalysis = JSON.parse(simplerCleaned);
+          if (simplerAnalysis.recommendations && simplerAnalysis.recommendations.length > 0) {
+            console.log('Simpler prompt succeeded with', simplerAnalysis.recommendations.length, 'recommendations');
+            analysis = simplerAnalysis;
+          } else {
+            console.warn('Simpler prompt also returned empty results');
+          }
+        } catch (e) {
+          console.error('Simpler prompt parse error:', e);
+        }
+      }
+    } catch (parseError) {
+      console.error('JSON parse error:', parseError);
+      console.error('Cleaned text that failed to parse:', cleanedText.substring(0, 500));
+      throw new Error(`Failed to parse AI response as JSON: ${parseError}`);
+    }
 
     // Map paper IDs back to actual paper data and validate recommendations using heuristics
     const conditionLower = condition.toLowerCase();
@@ -516,13 +623,12 @@ ${prompt}`;
     const result: HealthAnalysis = {
       condition,
       recommendations: recommendationsWithSimplified,
-      mechanisms: analysis.mechanisms || [],
+      mechanisms: [],
     };
 
-    // Add budget options if requested
-    if (includeBudget) {
-      result.budgetOptions = await generateBudgetOptions(condition, recommendations);
-    }
+    console.log('Final result - recommendations count:', result.recommendations.length);
+    console.log('Final result - beneficial:', result.recommendations.filter(r => r.category === 'beneficial').length);
+    console.log('Final result - risky:', result.recommendations.filter(r => r.category === 'risky').length);
 
     return result;
   } catch (error) {
@@ -535,48 +641,4 @@ ${prompt}`;
   }
 }
 
-/**
- * Generate budget-friendly options using government sources
- */
-async function generateBudgetOptions(
-  condition: string,
-  recommendations: HealthRecommendation[]
-): Promise<BudgetOption[]> {
-  const budgetPrompt = `Based on the condition "${condition}" and these recommendations, suggest budget-friendly alternatives using government sources (USDA, CDC, NIH, etc.).
-
-Format as JSON:
-{
-  "options": [
-    {
-      "name": "option name",
-      "description": "description",
-      "source": "source name (e.g., USDA, CDC)",
-      "sourceUrl": "url to source",
-      "cost": "estimated cost if available"
-    }
-  ]
-}
-
-Recommendations: ${JSON.stringify(recommendations.map((r) => r.name))}
-
-Respond ONLY with valid JSON.`;
-
-  try {
-    const fullPrompt = `You are a health advisor. Suggest budget-friendly alternatives using government sources. Format as JSON.
-
-${budgetPrompt}`;
-
-    const systemPrompt = 'You are a health advisor. Suggest budget-friendly alternatives using government sources. Format as JSON.';
-
-    const responseText = await generateAIResponse(fullPrompt, systemPrompt);
-    
-    // Clean up response (remove markdown code blocks if present)
-    const cleanedText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const responseData = JSON.parse(cleanedText);
-    return responseData.options || [];
-  } catch (error) {
-    console.error('Budget options error:', error);
-    return [];
-  }
-}
 

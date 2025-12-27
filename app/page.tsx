@@ -5,11 +5,9 @@ import { HealthAnalysis, HealthRecommendation, Evidence } from '@/lib/services/a
 
 export default function Home() {
   const [condition, setCondition] = useState('');
-  const [includeBudget, setIncludeBudget] = useState(false);
   const [loading, setLoading] = useState(false);
   const [analysis, setAnalysis] = useState<HealthAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [searchStats, setSearchStats] = useState<any>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,7 +25,6 @@ export default function Home() {
         },
         body: JSON.stringify({
           condition: condition.trim(),
-          includeBudget,
         }),
       });
 
@@ -38,7 +35,6 @@ export default function Home() {
       }
 
       setAnalysis(data.analysis);
-      setSearchStats(data.searchStats);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
@@ -72,17 +68,6 @@ export default function Home() {
             />
           </div>
 
-          <div className="checkbox-group">
-            <input
-              type="checkbox"
-              id="budget"
-              checked={includeBudget}
-              onChange={(e) => setIncludeBudget(e.target.checked)}
-              disabled={loading}
-            />
-            <label htmlFor="budget">Include budget-friendly options</label>
-          </div>
-
           <button type="submit" className="button" disabled={loading || !condition.trim()}>
             {loading ? 'Analyzing...' : 'Analyze Condition'}
           </button>
@@ -102,39 +87,6 @@ export default function Home() {
 
       {analysis && (
         <>
-          {searchStats && (
-            <div className="card">
-              <h2 style={{ marginBottom: '1rem', color: '#333' }}>Search Results</h2>
-              <div className="stats">
-                <div className="stat-item">
-                  <div className="stat-value">{searchStats.pubmed}</div>
-                  <div className="stat-label">PubMed Papers</div>
-                </div>
-                <div className="stat-item">
-                  <div className="stat-value">{searchStats.semanticScholar}</div>
-                  <div className="stat-label">Semantic Scholar Papers</div>
-                </div>
-                <div className="stat-item">
-                  <div className="stat-value">{searchStats.analyzed}</div>
-                  <div className="stat-label">Analyzed</div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {analysis.mechanisms.length > 0 && (
-            <div className="card">
-              <h2 style={{ marginBottom: '1rem', color: '#333' }}>Biological Mechanisms</h2>
-              <div className="mechanisms-list">
-                {analysis.mechanisms.map((mechanism, idx) => (
-                  <span key={idx} className="mechanism-tag">
-                    {mechanism}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
           {beneficial.length > 0 && (
             <div className="card benefits-section">
               <h2 className="section-title">✓ Beneficial Foods & Activities</h2>
@@ -149,36 +101,6 @@ export default function Home() {
               <h2 className="section-title">⚠ Risky Foods & Activities</h2>
               {risky.map((rec, idx) => (
                 <RecommendationCard key={idx} recommendation={rec} />
-              ))}
-            </div>
-          )}
-
-          {analysis.budgetOptions && analysis.budgetOptions.length > 0 && (
-            <div className="card budget-section">
-              <h2 className="section-title" style={{ color: '#0369a1' }}>
-                💰 Budget-Friendly Options
-              </h2>
-              {analysis.budgetOptions.map((option, idx) => (
-                <div key={idx} className="budget-option">
-                  <h4>{option.name}</h4>
-                  <p style={{ color: '#555', marginBottom: '0.5rem' }}>{option.description}</p>
-                  <div style={{ fontSize: '0.875rem', color: '#666' }}>
-                    <strong>Source:</strong>{' '}
-                    <a
-                      href={option.sourceUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ color: '#0369a1', textDecoration: 'underline' }}
-                    >
-                      {option.source}
-                    </a>
-                    {option.cost && (
-                      <span style={{ marginLeft: '1rem' }}>
-                        <strong>Cost:</strong> {option.cost}
-                      </span>
-                    )}
-                  </div>
-                </div>
               ))}
             </div>
           )}
@@ -405,15 +327,32 @@ function RecommendationCard({ recommendation }: { recommendation: HealthRecommen
 function EvidenceItem({ evidence }: { evidence: Evidence }) {
   return (
     <div className="evidence-item">
-      <div style={{ fontWeight: 600, color: '#333', marginBottom: '0.25rem' }}>
+      <div style={{ fontWeight: 600, color: '#333', marginBottom: '0.5rem' }}>
         {evidence.paperTitle}
       </div>
+      {evidence.impact && (
+        <div style={{ 
+          padding: '0.75rem', 
+          background: '#f0fdf4', 
+          borderRadius: '6px', 
+          border: '1px solid #86efac',
+          marginBottom: '0.75rem',
+          fontSize: '0.875rem'
+        }}>
+          <strong style={{ color: '#166534', display: 'block', marginBottom: '0.25rem' }}>
+            📊 Study Results:
+          </strong>
+          <span style={{ color: '#166534' }}>{evidence.impact}</span>
+        </div>
+      )}
       {evidence.quote && (
-        <div className="evidence-quote">"{evidence.quote}"</div>
+        <div className="evidence-quote" style={{ fontSize: '0.9rem', lineHeight: '1.6', padding: '1rem' }}>
+          "{evidence.quote}"
+        </div>
       )}
       {evidence.relevantSection && (
-        <div style={{ fontSize: '0.875rem', color: '#666', marginTop: '0.25rem' }}>
-          Section: {evidence.relevantSection}
+        <div style={{ fontSize: '0.875rem', color: '#666', marginTop: '0.5rem', fontStyle: 'italic' }}>
+          From: {evidence.relevantSection}
         </div>
       )}
       <a
@@ -421,11 +360,12 @@ function EvidenceItem({ evidence }: { evidence: Evidence }) {
         target="_blank"
         rel="noopener noreferrer"
         className="evidence-link"
+        style={{ marginTop: '0.75rem', display: 'inline-block' }}
       >
         View Paper →
       </a>
       {evidence.doi && (
-        <div style={{ fontSize: '0.75rem', color: '#999', marginTop: '0.25rem' }}>
+        <div style={{ fontSize: '0.75rem', color: '#999', marginTop: '0.5rem' }}>
           DOI: {evidence.doi}
         </div>
       )}

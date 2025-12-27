@@ -7,7 +7,7 @@ import { analyzeHealthPapers } from '@/lib/services/aiService';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { condition, includeBudget = false } = body;
+    const { condition } = body;
 
     if (!condition || typeof condition !== 'string') {
       return NextResponse.json(
@@ -53,18 +53,15 @@ export async function POST(request: NextRequest) {
       [], // No Semantic Scholar papers
       googleScholarResults.papers,
       webResults.contents,
-      includeBudget
+      false // includeBudget always false
     );
+
+    console.log('API Response - analysis recommendations:', analysis.recommendations.length);
+    console.log('API Response - condition:', analysis.condition);
 
     return NextResponse.json({
       success: true,
       analysis,
-      searchStats: {
-        pubmed: pubmedResults.total,
-        googleScholar: googleScholarResults.total,
-        web: webResults.total,
-        analyzed: pubmedResults.papers.length + googleScholarResults.papers.length + webResults.contents.length,
-      },
     });
   } catch (error) {
     console.error('Analysis API error:', error);
