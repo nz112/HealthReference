@@ -8,6 +8,7 @@ export interface PubMedPaper {
   journal: string;
   year: string;
   abstract?: string;
+  methods?: string; // Methods section content
   doi?: string;
   url: string;
 }
@@ -65,7 +66,7 @@ export async function searchPubMed(
     });
 
     // Parse XML response (simplified - in production, use proper XML parser)
-    const papers = parsePubMedXML(fetchResponse.data, pmids);
+    const papers = await parsePubMedXML(fetchResponse.data, pmids);
 
     const result = {
       papers,
@@ -82,7 +83,7 @@ export async function searchPubMed(
   }
 }
 
-function parsePubMedXML(xml: string, pmids: string[]): PubMedPaper[] {
+async function parsePubMedXML(xml: string, pmids: string[]): Promise<PubMedPaper[]> {
   const papers: PubMedPaper[] = [];
   
   // Simple regex-based parsing (in production, use proper XML parser like xml2js)
@@ -101,6 +102,36 @@ function parsePubMedXML(xml: string, pmids: string[]): PubMedPaper[] {
     // Extract abstract
     const abstractMatch = articleXml.match(/<AbstractText[^>]*>([\s\S]*?)<\/AbstractText>/);
     const abstract = abstractMatch ? cleanXmlText(abstractMatch[1]) : undefined;
+
+    // Try to extract Methods section
+    let methods: string | undefined = undefined;
+    
+    // Check if there's a PMC ID (free full text available)
+    const pmcMatch = articleXml.match(/<ArticleId IdType="pmc">([\s\S]*?)<\/ArticleId>/);
+    const pmcId = pmcMatch ? cleanXmlText(pmcMatch[1]) : undefined;
+    
+    // Try to extract methods-related content from abstract
+    if (abstract) {
+      const methodsInAbstract = extractMethodsFromAbstract(abstract);
+      if (methodsInAbstract) {
+        methods = methodsInAbstract;
+      }
+    }
+    
+    // If we have PMC ID, try to fetch full Methods section (async, non-blocking)
+    if (pmcId) {
+      fetchMethodsFromPMC(pmcId).then(pmcMethods => {
+        if (pmcMethods) {
+          // Update methods if found (async, may complete after paper is added)
+          const paperIndex = papers.findIndex(p => p.pmid === pmid);
+          if (paperIndex >= 0) {
+            papers[paperIndex].methods = pmcMethods;
+          }
+        }
+      }).catch(() => {
+        // Silently fail - not all papers have accessible full text
+      });
+    }
 
     // Extract authors
     const authors: string[] = [];
@@ -129,6 +160,7 @@ function parsePubMedXML(xml: string, pmids: string[]): PubMedPaper[] {
       journal,
       year,
       abstract,
+      methods,
       doi,
       url: `https://pubmed.ncbi.nlm.nih.gov/${pmid}/`,
     });
@@ -148,5 +180,57 @@ function cleanXmlText(text: string): string {
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .trim();
+}
+
+/**
+ * Fetch Methods section from PubMed Central (PMC) if available
+ */
+async function fetchMethodsFromPMC(pmcId: string): Promise<string | undefined> {
+  try {
+    // PMC API endpoint for full text
+    const pmcUrl = `https://www.ncbi.nlm.nih.gov/pmc/utils/oa/pmc.fcgi?id=${pmcId}`;
+    const response = await axios.get(pmcUrl, { timeout: 5000 });
+    
+    // If we get XML, try to parse Methods section
+    // This is a simplified approach - full PMC XML parsing would be more complex
+    const methodsMatch = response.data.match(/<sec sec-type="methods">([\s\S]*?)<\/sec>/i);
+    if (methodsMatch) {
+      return cleanXmlText(methodsMatch[1]).substring(0, 2000); // Limit to 2000 chars
+    }
+    
+    // Alternative: try to find Methods in any section
+    const allMethodsMatches = response.data.match(/<sec[^>]*>[\s\S]*?<title>Methods?<\/title>([\s\S]*?)<\/sec>/i);
+    if (allMethodsMatches) {
+      return cleanXmlText(allMethodsMatches[1]).substring(0, 2000);
+    }
+  } catch (error) {
+    // Silently fail - not all papers are accessible
+  }
+  return undefined;
+}
+
+/**
+ * Try to extract Methods-related content from abstract
+ */
+function extractMethodsFromAbstract(abstract: string): string | undefined {
+  // Look for methods-related keywords in abstract
+  const methodsKeywords = [
+    'methods:', 'method:', 'intervention:', 'protocol:', 'procedure:',
+    'participants were', 'subjects were', 'patients were', 'exercise protocol',
+    'training program', 'intervention consisted', 'exercise intervention'
+  ];
+  
+  const lowerAbstract = abstract.toLowerCase();
+  for (const keyword of methodsKeywords) {
+    if (lowerAbstract.includes(keyword)) {
+      // Extract sentence or paragraph containing the keyword
+      const keywordIndex = lowerAbstract.indexOf(keyword);
+      const start = Math.max(0, keywordIndex - 100);
+      const end = Math.min(abstract.length, keywordIndex + 500);
+      return abstract.substring(start, end).trim();
+    }
+  }
+  
+  return undefined;
 }
 

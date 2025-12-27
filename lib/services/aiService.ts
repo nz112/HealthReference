@@ -126,18 +126,33 @@ export async function analyzeHealthPapers(
   }
 
   // Create prompt for AI analysis
+  // Include both abstract and Methods section if available
   const papersText = allPapers
     .map(
-      (p, i) => `
+      (p, i) => {
+        let content = '';
+        if (p.abstract) {
+          content += `Abstract: ${p.abstract.substring(0, 2000)}\n\n`;
+        }
+        // Include Methods section if available (from PMC or extracted from abstract)
+        if ((p as any).methods) {
+          content += `Methods Section: ${(p as any).methods}\n\n`;
+        }
+        if (!content) {
+          content = 'No content available';
+        }
+        
+        return `
 Source ${i + 1}:
 Title: ${p.title}
 Source: ${p.source === 'pubmed' ? 'PubMed' : p.source === 'googlescholar' ? 'Google Scholar' : p.source === 'web' ? `Web (${p.journal})` : 'Semantic Scholar'}
-${p.abstract ? `Content: ${p.abstract.substring(0, 600)}` : 'No content available'}
+${content}
 URL: ${p.url}
 ${p.doi ? `DOI: ${p.doi}` : ''}
 ${p.journal ? `Publication: ${p.journal}` : ''}
 ${p.year ? `Year: ${p.year}` : ''}
-`
+`;
+      }
     )
     .join('\n---\n');
 
@@ -200,15 +215,21 @@ EXTRACT SPECIFIC DETAILS - FOLLOW THIS EXACT WORKFLOW:
 STEP 1: FIND THE EXACT TEXT CHUNK IN THE PUBLICATION FIRST
 - For ACTIVITIES/EXERCISES:
   * CRITICAL: Exercise details (reps, sets, duration, frequency, specific exercises) are ALMOST ALWAYS in the Methods section
-  * FIRST, search the Methods section thoroughly - this is where intervention protocols are described
-  * Also check: Intervention section, Materials and Methods, Study Protocol, or Results section if methods are described there
-  * Find the EXACT TEXT CHUNK from the paper that contains exercise information
-  * Copy the relevant paragraph or sentence DIRECTLY from the paper - copy it EXACTLY as written
-  * The chunk MUST contain the actual numbers, exercises, reps, sets, duration, frequency mentioned
-  * Look for phrases like "participants performed", "exercise protocol", "training program", "intervention consisted of"
-  * Note the exact location (e.g., "Methods section, page 3", "Methods section, paragraph 2", "Table 2")
+  * CRITICAL: If this is an activity recommendation, you MUST find and include the exerciseDetailsChunk - this is REQUIRED
+  * IMPORTANT: The content provided may only be the abstract. Methods sections are usually in the full paper, not the abstract.
+  * HOWEVER: Look carefully in the provided content for ANY mention of exercise details, protocols, routines, or interventions
+  * FIRST, search the provided content for Methods-related text - look for "Methods", "Intervention", "Protocol", "Materials and Methods"
+  * Also check: Any section that describes what participants did, exercise protocols, training programs, intervention details
+  * Find the EXACT TEXT CHUNK from the provided content that contains exercise information
+  * Copy the relevant paragraph or sentence DIRECTLY from the content - copy it EXACTLY as written
+  * The chunk MUST contain the actual numbers, exercises, reps, sets, duration, frequency mentioned (if available)
+  * Look for phrases like "participants performed", "exercise protocol", "training program", "intervention consisted of", "stretching routine", "exercise regimen", "subjects were instructed to", "the intervention included"
+  * Note the exact location (e.g., "Methods section", "Abstract mentions", "Intervention description", "Table 2")
   * Store this EXACT text in "exerciseDetailsChunk" and location in "sectionForExercises" in the evidence object
-  * If you find exercise details in Methods, you MUST include them - do not skip this step
+  * If you find ANY exercise-related details in the provided content, you MUST include them - do not skip this step
+  * EVEN IF specific numbers aren't given, include the descriptive text as the exerciseDetailsChunk (e.g., "Participants engaged in resistance training 3 times per week" even without exact reps)
+  * If the provided content doesn't contain Methods details, still try to extract ANY exercise information mentioned (even if brief)
+  * DO NOT create an activity recommendation without an exerciseDetailsChunk - extract whatever exercise information is available in the provided content
   
 - For FOODS/SUPPLEMENTS:
   * FIRST, search the paper for sections containing dosage/intake details (typically in Methods or Intervention sections)
@@ -278,7 +299,7 @@ Format your response as JSON with this structure:
       "category": "beneficial" or "risky",
       "mechanism": "SPECIFIC biological mechanism explaining HOW it works (e.g., 'increases insulin sensitivity by enhancing glucose uptake in muscle cells', NOT 'acts as a way to help with treatment')",
       "summary": "brief explanation with specific details",
-      "specificExercises": ["Exercise 1", "Exercise 2"] (ONLY for activities - list all specific exercises mentioned, e.g., ["Bench Press", "Squats", "Deadlifts"]),
+      "specificExercises": ["Exercise 1", "Exercise 2"] (ONLY for activities - list all specific exercises mentioned, e.g., ["Bench Press", "Squats", "Deadlifts"] - REQUIRED for activities),
       "reps": "reps/sets if mentioned (e.g., '3 sets of 8-12 reps', '10-15 repetitions')",
       "sets": "number of sets if mentioned (e.g., '3 sets')",
       "duration": "duration if mentioned (e.g., '30 minutes', '45-60 minutes')",
@@ -295,8 +316,8 @@ Format your response as JSON with this structure:
           "impact": "Actual measurable impacts/results from the study (e.g., 'reduced blood pressure by 10mmHg', 'improved cognitive function by 15%', 'decreased inflammation by 20%') - extract from Discussion or Results sections",
           "relevantSection": "section where quote comes from (e.g., 'Discussion section', 'Results section', 'Conclusion')",
           "doi": "doi if available",
-          "sectionForExercises": "exact section/page where exercise details are mentioned (e.g., 'Methods section, page 3', 'Table 2', 'Results paragraph 2') - ONLY include if exercise details are in this paper",
-          "exerciseDetailsChunk": "EXACT text chunk from the paper containing exercise details (copy the relevant paragraph or sentence directly from the paper) - ONLY include if exercise details are in this paper",
+          "sectionForExercises": "exact section/page where exercise details are mentioned (e.g., 'Methods section, page 3', 'Table 2', 'Results paragraph 2') - REQUIRED for activity recommendations",
+          "exerciseDetailsChunk": "EXACT text chunk from the paper containing exercise details (copy the relevant paragraph or sentence directly from the paper) - REQUIRED for activity recommendations, MUST be included if this is an activity",
           "sectionForDosage": "exact section/page where dosage/intake details are mentioned (e.g., 'Methods section, page 4', 'Table 1', 'Results paragraph 3') - ONLY include if dosage/intake details are in this paper",
           "dosageDetailsChunk": "EXACT text chunk from the paper containing dosage/intake details (copy the relevant paragraph or sentence directly from the paper) - ONLY include if dosage/intake details are in this paper"
         }
@@ -444,7 +465,9 @@ Respond ONLY with valid JSON.`;
         
         // Remove exercise details if no exercise chunks are available (chunk is the source)
         const hasExerciseChunks = rec.evidence?.some((ev: any) => ev.exerciseDetailsChunk);
-        if (!hasExerciseChunks) {
+        if (!hasExerciseChunks && rec.type === 'activity') {
+          // Log warning for activities without chunks
+          console.warn(`Activity recommendation "${rec.name}" has no exerciseDetailsChunk - exercise details will be hidden`);
           // Remove exercise details - they should only exist if chunk exists
           delete rec.specificExercises;
           delete rec.reps;

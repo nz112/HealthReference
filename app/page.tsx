@@ -137,49 +137,57 @@ function RecommendationCard({ recommendation }: { recommendation: HealthRecommen
         </div>
       )}
 
-      {/* Activity-specific details - only show if exercise details AND chunks exist */}
-      {recommendation.type === 'activity' && 
-       ((recommendation.specificExercises && recommendation.specificExercises.length > 0) || recommendation.reps || recommendation.sets || recommendation.duration || recommendation.frequency) &&
-       recommendation.evidence?.some(ev => ev.exerciseDetailsChunk) && (
+      {/* Activity-specific details - ALWAYS show for activities */}
+      {recommendation.type === 'activity' && (
         <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: '#f0fdf4', borderRadius: '6px', border: '1px solid #86efac' }}>
           <strong style={{ color: '#166534', display: 'block', marginBottom: '0.5rem' }}>
             🏃 Exercise Details:
           </strong>
-          {recommendation.specificExercises && recommendation.specificExercises.length > 0 && (
-            <div style={{ marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-              <strong style={{ color: '#166534' }}>Specific exercises:</strong>{' '}
-              {recommendation.specificExercises.join(', ')}
-            </div>
-          )}
-          {recommendation.reps && (
-            <div style={{ marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-              <strong style={{ color: '#166534' }}>Reps:</strong> {recommendation.reps}
-            </div>
-          )}
-          {recommendation.sets && !recommendation.reps && (
-            <div style={{ marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-              <strong style={{ color: '#166534' }}>Sets:</strong> {recommendation.sets}
-            </div>
-          )}
-          {recommendation.duration && (
-            <div style={{ marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-              <strong style={{ color: '#166534' }}>Duration:</strong> {recommendation.duration}
-            </div>
-          )}
-          {recommendation.frequency && (
-            <div style={{ marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-              <strong style={{ color: '#166534' }}>Frequency:</strong> {recommendation.frequency}
+          
+          {/* Show exercise details if available */}
+          {(recommendation.specificExercises && recommendation.specificExercises.length > 0) || recommendation.reps || recommendation.sets || recommendation.duration || recommendation.frequency ? (
+            <>
+              {recommendation.specificExercises && recommendation.specificExercises.length > 0 && (
+                <div style={{ marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+                  <strong style={{ color: '#166534' }}>Specific exercises:</strong>{' '}
+                  {recommendation.specificExercises.join(', ')}
+                </div>
+              )}
+              {recommendation.reps && (
+                <div style={{ marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+                  <strong style={{ color: '#166534' }}>Reps:</strong> {recommendation.reps}
+                </div>
+              )}
+              {recommendation.sets && !recommendation.reps && (
+                <div style={{ marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+                  <strong style={{ color: '#166534' }}>Sets:</strong> {recommendation.sets}
+                </div>
+              )}
+              {recommendation.duration && (
+                <div style={{ marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+                  <strong style={{ color: '#166534' }}>Duration:</strong> {recommendation.duration}
+                </div>
+              )}
+              {recommendation.frequency && (
+                <div style={{ marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+                  <strong style={{ color: '#166534' }}>Frequency:</strong> {recommendation.frequency}
+                </div>
+              )}
+            </>
+          ) : (
+            <div style={{ marginBottom: '0.5rem', fontSize: '0.875rem', color: '#92400e', fontStyle: 'italic' }}>
+              Exercise details (reps, sets, duration, frequency) unable to be found in paper.
             </div>
           )}
           
           {/* Links to paper sections where exercise details are mentioned */}
-          {recommendation.evidence && recommendation.evidence.some(ev => ev.sectionForExercises) && (
+          {recommendation.evidence && recommendation.evidence.some(ev => ev.sectionForExercises && ev.exerciseDetailsChunk) ? (
             <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid #86efac' }}>
               <strong style={{ color: '#166534', display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
                 📄 Exercise details from papers:
               </strong>
               {recommendation.evidence
-                .filter(ev => ev.sectionForExercises)
+                .filter(ev => ev.sectionForExercises && ev.exerciseDetailsChunk)
                 .map((evidence, idx) => (
                   <div key={idx} style={{ marginBottom: '1rem', fontSize: '0.875rem' }}>
                     <div style={{ marginBottom: '0.5rem' }}>
@@ -211,42 +219,74 @@ function RecommendationCard({ recommendation }: { recommendation: HealthRecommen
                   </div>
                 ))}
             </div>
+          ) : (
+            <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid #86efac' }}>
+              <div style={{ marginBottom: '0.5rem', fontSize: '0.875rem', color: '#92400e', fontStyle: 'italic' }}>
+                Exercise details chunk unable to be found in paper.
+              </div>
+              <button
+                style={{
+                  padding: '0.5rem 1rem',
+                  background: '#fef3c7',
+                  border: '1px solid #fde047',
+                  borderRadius: '4px',
+                  color: '#92400e',
+                  cursor: 'pointer',
+                  fontSize: '0.875rem',
+                  fontWeight: 500
+                }}
+                onClick={() => {
+                  // TODO: Implement online search for exercise details from less reliable sources
+                  alert('Online search feature coming soon');
+                }}
+              >
+                🔍 Search online for exercise details (less reliable sources)
+              </button>
+            </div>
           )}
         </div>
       )}
 
-      {/* Food/Supplement-specific details - only show if details AND chunks exist */}
-      {recommendation.type === 'food' && 
-       (recommendation.dosage || recommendation.servingSize || recommendation.frequencyOfIntake) &&
-       recommendation.evidence?.some(ev => ev.dosageDetailsChunk) && (
+      {/* Food/Supplement-specific details - ALWAYS show for foods, but NOT for risky activities */}
+      {recommendation.type === 'food' && recommendation.category !== 'risky' && (
         <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: '#fef3c7', borderRadius: '6px', border: '1px solid #fde047' }}>
           <strong style={{ color: '#92400e', display: 'block', marginBottom: '0.5rem' }}>
             🍎 Intake Details:
           </strong>
-          {recommendation.dosage && (
-            <div style={{ marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-              <strong style={{ color: '#92400e' }}>Dosage:</strong> {recommendation.dosage}
-            </div>
-          )}
-          {recommendation.servingSize && (
-            <div style={{ marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-              <strong style={{ color: '#92400e' }}>Serving size:</strong> {recommendation.servingSize}
-            </div>
-          )}
-          {recommendation.frequencyOfIntake && (
-            <div style={{ marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-              <strong style={{ color: '#92400e' }}>Frequency:</strong> {recommendation.frequencyOfIntake}
+          
+          {/* Show intake details if available */}
+          {recommendation.dosage || recommendation.servingSize || recommendation.frequencyOfIntake ? (
+            <>
+              {recommendation.dosage && (
+                <div style={{ marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+                  <strong style={{ color: '#92400e' }}>Dosage:</strong> {recommendation.dosage}
+                </div>
+              )}
+              {recommendation.servingSize && (
+                <div style={{ marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+                  <strong style={{ color: '#92400e' }}>Serving size:</strong> {recommendation.servingSize}
+                </div>
+              )}
+              {recommendation.frequencyOfIntake && (
+                <div style={{ marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+                  <strong style={{ color: '#92400e' }}>Frequency:</strong> {recommendation.frequencyOfIntake}
+                </div>
+              )}
+            </>
+          ) : (
+            <div style={{ marginBottom: '0.5rem', fontSize: '0.875rem', color: '#92400e', fontStyle: 'italic' }}>
+              Intake details (dosage, serving size, frequency) unable to be found in paper.
             </div>
           )}
           
           {/* Links to paper sections where intake details are mentioned */}
-          {recommendation.evidence && recommendation.evidence.some(ev => ev.sectionForDosage) && (
+          {recommendation.evidence && recommendation.evidence.some(ev => ev.sectionForDosage && ev.dosageDetailsChunk) ? (
             <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid #fde047' }}>
               <strong style={{ color: '#92400e', display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
                 📄 Intake details from papers:
               </strong>
               {recommendation.evidence
-                .filter(ev => ev.sectionForDosage)
+                .filter(ev => ev.sectionForDosage && ev.dosageDetailsChunk)
                 .map((evidence, idx) => (
                   <div key={idx} style={{ marginBottom: '1rem', fontSize: '0.875rem' }}>
                     <div style={{ marginBottom: '0.5rem' }}>
@@ -277,6 +317,30 @@ function RecommendationCard({ recommendation }: { recommendation: HealthRecommen
                     )}
                   </div>
                 ))}
+            </div>
+          ) : (
+            <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid #fde047' }}>
+              <div style={{ marginBottom: '0.5rem', fontSize: '0.875rem', color: '#92400e', fontStyle: 'italic' }}>
+                Intake details chunk unable to be found in paper.
+              </div>
+              <button
+                style={{
+                  padding: '0.5rem 1rem',
+                  background: '#fef3c7',
+                  border: '1px solid #fde047',
+                  borderRadius: '4px',
+                  color: '#92400e',
+                  cursor: 'pointer',
+                  fontSize: '0.875rem',
+                  fontWeight: 500
+                }}
+                onClick={() => {
+                  // TODO: Implement online search for intake details from less reliable sources
+                  alert('Online search feature coming soon');
+                }}
+              >
+                🔍 Search online for intake details (less reliable sources)
+              </button>
             </div>
           )}
         </div>
